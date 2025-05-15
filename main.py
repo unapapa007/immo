@@ -10,6 +10,7 @@ URL       = 'https://www.harry-gerlach.de/wohnung-mieten-berlin/'
 BASIS_URL = "https://www.harry-gerlach.de/"
 SEEN_FILE = "seen.txt"
 INTERVAL  = 1800  # 30 Minuten
+TIMEOUT   = 20    # Sekunden Timeout für HTTP-Verbindungen
 
 def load_seen():
     if not os.path.isfile(SEEN_FILE):
@@ -26,14 +27,14 @@ def sende_telegram(text):
     url  = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = {'chat_id': CHAT_ID, 'text': text}
     try:
-        requests.post(url, data=data, timeout=10)
+        requests.post(url, data=data, timeout=TIMEOUT)
     except Exception:
-        pass  # wir unterdrücken Telegram-Fehler
+        pass  # Telegram-Fehler werden ignoriert
 
 def pruefe_neue_inserate():
     seen = load_seen()
     try:
-        resp = requests.get(URL, timeout=10)
+        resp = requests.get(URL, timeout=TIMEOUT)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, 'html.parser')
         neue = []
