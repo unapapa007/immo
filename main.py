@@ -7,34 +7,13 @@ from datetime import datetime
 # === Einstellungen ===
 BOT_TOKEN = "7847636484:AAE2tkFgrsanbKk3Tyxh_Uxh-_NKGBfU7Rw"
 CHAT_ID   = "1001291102"
-SITES = [
-    {
-        "name": "Harry-Gerlach",
-        "url": "https://www.harry-gerlach.de/wohnung-mieten-berlin/",
-        "base": "https://www.harry-gerlach.de",
-        "selector": "a.media",
-        "seen_file": "seen_harry.txt"
-    },
-    {
-        "name": "GESOBAU",
-        "url": "https://www.gesobau.de/mieten/wohnungssuche/",
-        "base": "https://www.gesobau.de",
-        "selector": "div.teaserList__item a[href]",
-        "seen_file": "seen_gesobau.txt"
-    }
-]
-TIMEOUT  = 20    # Sekunden Timeout
-LOG_FILE = "bot.log"
+URL       = 'https://www.harry-gerlach.de/wohnung-mieten-berlin/'
+BASIS_URL = "https://www.harry-gerlach.de/"
+SEEN_FILE = "seen.txt"
+INTERVAL  = 1800  # 30 Minuten
 
-# === Logging-Funktion ===
-def log(message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, "a") as f:
-        f.write(f"[{timestamp}] {message}\n")
-
-# === Seen-Management ===
-def load_seen(path):
-    if not os.path.isfile(path):
+def load_seen():
+    if not os.path.isfile(SEEN_FILE):
         return set()
     with open(path, "r") as f:
         return set(line.strip() for line in f if line.strip())
@@ -49,17 +28,14 @@ def sende_telegram(text):
     url  = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = {'chat_id': CHAT_ID, 'text': text}
     try:
-        requests.post(url, data=data, timeout=TIMEOUT)
-        log(f"Telegram gesendet: {text}")
-    except Exception as e:
-        log(f"Telegram-Fehler: {e}")
+        requests.post(url, data=data, timeout=10)
+    except Exception:
+        pass  # wir unterdrücken Telegram-Fehler
 
-# === Prüfen einer einzelnen Seite ===
-def pruefe_site(site):
-    log(f"Starte Abruf: {site['name']} ({site['url']})")
-    seen = load_seen(site['seen_file'])
+def pruefe_neue_inserate():
+    seen = load_seen()
     try:
-        resp = requests.get(site['url'], timeout=TIMEOUT)
+        resp = requests.get(URL, timeout=10)
         resp.raise_for_status()
         log(f"HTTP {resp.status_code} OK für {site['name']}")
         soup = BeautifulSoup(resp.text, 'html.parser')
