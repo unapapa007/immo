@@ -1,57 +1,90 @@
+
 import requests
 from bs4 import BeautifulSoup
-import time
 import os
+from datetime import datetime
 
 # === Einstellungen ===
 BOT_TOKEN = "7847636484:AAE2tkFgrsanbKk3Tyxh_Uxh-_NKGBfU7Rw"
 CHAT_ID   = "1001291102"
-URL       = 'https://www.harry-gerlach.de/wohnung-mieten-berlin/'
-BASIS_URL = "https://www.harry-gerlach.de/"
-SEEN_FILE = "seen.txt"
-INTERVAL  = 1800  # 30 Minuten
+SITES = [
+    {
+        "name": "Harry-Gerlach",
+        "url": "https://www.harry-gerlach.de/wohnung-mieten-berlin/",
+        "base": "https://www.harry-gerlach.de",
+        "selector": "a.media",
+        "seen_file": "seen_harry.txt"
+    },
+    {
+        "name": "GESOBAU",
+        "url": "https://www.gesobau.de/mieten/wohnungssuche/",
+        "base": "https://www.gesobau.de",
+        "selector": "div.teaserList__item a[href]",
+        "seen_file": "seen_gesobau.txt"
+    }
+]
+TIMEOUT  = 20    # Sekunden Timeout
+LOG_FILE = "bot.log"
 
-def load_seen():
-    if not os.path.isfile(SEEN_FILE):
+# === Logging-Funktion ===
+def log(message):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOG_FILE, "a") as f:
+        f.write(f"[{timestamp}] {message}\n")
+
+# === Seen-Management ===
+def load_seen(path):
+    if not os.path.isfile(path):
         return set()
-    with open(SEEN_FILE, "r") as f:
-        return set(line.strip() for line in f)
+    with open(path, "r") as f:
+        return set(line.strip() for line in f if line.strip())
 
-def save_seen(seen):
-    with open(SEEN_FILE, "w") as f:
-        for href in seen:
-            f.write(href + "\n")
+def save_seen(path, seen):
+    with open(path, "w") as f:
+        for h in seen:
+            f.write(h + "\n")
 
+# === Telegram senden ===
 def sende_telegram(text):
     url  = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = {'chat_id': CHAT_ID, 'text': text}
     try:
-        requests.post(url, data=data, timeout=10)
-    except Exception:
-        pass  # wir unterdrücken Telegram-Fehler
+        requests.post(url, data=data, timeout=TIMEOUT)
+        log(f"Telegram gesendet: {text}")
+    except Exception as e:
+        log(f"Telegram-Fehler: {e}")
 
-def pruefe_neue_inserate():
-    seen = load_seen()
+# === Prüfen einer einzelnen Seite ===
+def pruefe_site(site):
+    log(f"Starte Abruf: {site['name']} ({site['url']})")
+    seen = load_seen(site['seen_file'])
     try:
-        resp = requests.get(URL, timeout=10)
+        resp = requests.get(site['url'], timeout=TIMEOUT)
         resp.raise_for_status()
+        log(f"HTTP {resp.status_code} OK für {site['name']}")
         soup = BeautifulSoup(resp.text, 'html.parser')
         neue = []
-        for t in soup.select('a.media'):
-            href  = t.get('href')
-            title = t.find('img')['title'] if t.find('img') else 'kein Titel'
+        for elem in soup.select(site['selector']):
+            href = elem.get('href')
+            title_tag = elem.find('img') or elem.find('h3')
+            title = title_tag.get('title') if title_tag and title_tag.get('title') else elem.get_text(strip=True)
             if href and href not in seen:
                 seen.add(href)
                 neue.append((href, title))
         if neue:
-            save_seen(seen)
+            save_seen(site['seen_file'], seen)
             for href, title in neue:
-                volle_url = BASIS_URL + href.lstrip('/')
-                sende_telegram(f"📢 Neues Inserat: {title}\n🔗 {volle_url}")
+                volle_url = site['base'] + href if href.startswith('/') else href
+                sende_telegram(f"📢 Neues Inserat ({site['name']}): {title}\n🔗 {volle_url}")
+        else:
+            log(f"Keine neuen Inserate für {site['name']}")
     except Exception as e:
-        sende_telegram(f"⚠️ Fehler im Bot: {e}")
+        log(f"Fehler beim Abruf {site['name']}: {e}")
+        sende_telegram(f"⚠️ Fehler in {site['name']} Bot: {e}")
 
+# === Einmalige Ausführung ===
 if __name__ == "__main__":
-    while True:
-        pruefe_neue_inserate()
-        time.sleep(INTERVAL)
+    log("Bot-Run gestartet")
+    for site in SITES:
+        pruefe_site(site)
+    log("Bot-Run beendet")
